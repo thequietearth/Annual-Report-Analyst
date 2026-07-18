@@ -13,6 +13,8 @@ collection, so ingestion is safely repeatable.
 import argparse
 import os
 import re
+import shutil
+import sqlite3
 import sys
 from pathlib import Path
 
@@ -61,6 +63,26 @@ def chunk_pages(pages: list[Document]) -> list[Document]:
     return splitter.split_documents(pages)
 
 
+def sweep_orphan_segments() -> None:
+    """Delete leftover segment dirs from replaced collections.
+
+    On Windows, Chroma can't remove a deleted collection's index directory
+    while its files are memory-mapped, so every re-ingest strands one. Since
+    chroma_db/ is committed to git, orphans would bloat the repo forever.
+    """
+    db = sqlite3.connect(Path(CHROMA_DIR) / "chroma.sqlite3")
+    live = {row[0] for row in db.execute("SELECT id FROM segments")}
+    db.close()
+    for entry in Path(CHROMA_DIR).iterdir():
+        if entry.is_dir() and entry.name not in live:
+            shutil.rmtree(entry, ignore_errors=True)
+            if entry.exists():
+                print(f"  note: orphan segment {entry.name} still locked; "
+                      f"re-run ingest later to remove it")
+            else:
+                print(f"  removed orphan segment {entry.name}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Ingest a PDF annual report into ChromaDB.")
     parser.add_argument("pdf", type=Path, help="Path to the PDF annual report")
@@ -105,6 +127,7 @@ def main() -> None:
         store.add_documents(batch)
         print(f"  {min(start + BATCH_SIZE, len(chunks))}/{len(chunks)}")
 
+    sweep_orphan_segments()
     print(f"Done: collection '{collection}' with {len(chunks)} chunks.")
 
 
