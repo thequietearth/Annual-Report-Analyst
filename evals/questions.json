@@ -1,0 +1,47 @@
+{
+  "_instructions": [
+    "Write 20 question/answer pairs from the ingested annual reports, then run:  python evals/run_evals.py",
+    "For each entry fill in: report (collection name from `python query.py --list`),",
+    "question (as you would ask it in the app), gold_answer (the correct answer in",
+    "your own words, with exact figures), and gold_pages (PHYSICAL PDF page numbers",
+    "where the answer appears - the same page numbers the app shows under Sources,",
+    "not the page printed in the document footer). A question counts as a retrieval",
+    "hit if ANY gold page is among the top-k retrieved chunks.",
+    "Entries 1-2 are worked examples to show the format - replace or keep them.",
+    "The runner skips entries whose question is empty, so you can fill these in gradually."
+  ],
+  "questions": [
+    {
+      "id": 1,
+      "report": "NFLX_AR2025",
+      "question": "How much did Netflix's revenue grow in 2025?",
+      "gold_answer": "Revenues grew 16% in 2025, from $39.0 billion in 2024 to $45.2 billion in 2025.",
+      "gold_pages": [29]
+    },
+    {
+      "id": 2,
+      "report": "CRM_AR2026",
+      "question": "What was Salesforce's total revenue in fiscal 2026?",
+      "gold_answer": "Total revenue was $41.5 billion in fiscal year 2026, an increase of 10% year-over-year.",
+      "gold_pages": [2, 5, 46, 47, 52]
+    },
+    { "id": 3, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 4, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 5, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 6, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 7, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 8, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 9, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 10, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 11, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 12, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 13, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 14, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 15, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 16, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 17, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 18, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 19, "report": "", "question": "", "gold_answer": "", "gold_pages": [] },
+    { "id": 20, "report": "", "question": "", "gold_answer": "", "gold_pages": [] }
+  ]
+}
