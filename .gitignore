@@ -1,0 +1,19 @@
+# Secrets — never commit
+.env
+
+# Virtualenv
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+
+# Source PDFs are large; only the ChromaDB embeddings ship (chroma_db/ IS committed)
+data/reports/*.pdf
+
+# Machine-local Claude Code settings
+.claude/settings.local.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
