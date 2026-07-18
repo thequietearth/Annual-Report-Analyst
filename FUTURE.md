@@ -24,6 +24,26 @@ explicitly out of scope for v1.
   source clean PDFs instead. Clever option: detect gibberish at ingest time
   and OCR those pages (Tesseract) in v2.
 
+## Findings from the first full eval run (2026-07-19, baseline)
+
+Hit-rate 14/20, grades 8 CORRECT / 9 PARTIAL / 3 INCORRECT. Patterns worth
+attacking in v2 (not tuned in v1 — the contract ships the honest baseline):
+
+- **Retrieval misses cluster on financial-statement line items** (buybacks,
+  capex, DRAM revenue): the question's wording is semantically closer to
+  narrative/definitional pages than to the dense numeric tables that hold the
+  answer. Classic embedding-retrieval weakness; v2 levers: larger k, hybrid
+  (BM25 + dense) search, or table-aware chunking.
+- **Most PARTIALs are omitted year-over-year context**: the answer states the
+  right headline figure but not the prior-year comparison the gold answer
+  includes. Lever: prompt the answerer to always include YoY context when the
+  excerpts contain it.
+- **One true miss becomes a false "not disclosed"** (Micron concentration):
+  when retrieval fails entirely, the strict grounding prompt makes the model
+  decline — honest, but graded INCORRECT because the report does disclose it.
+  This is the designed failure mode: better a visible decline than a
+  hallucination.
+
 ## Out of scope for v1 (per contract)
 
 - Multi-document comparison queries

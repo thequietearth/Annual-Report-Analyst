@@ -14,13 +14,17 @@ Treat the scope below as a hard contract.
 3. **UI**: single-page Streamlit app — pick from pre-ingested reports, ask a
    question, see answer + cited sources. No auth, no upload feature in v1
    (ingest via CLI).
-4. **Evals**: `evals/questions.json` with 20 hand-written Q&A pairs from the
-   actual reports (the user writes questions and gold answers themselves —
-   scaffold the file and the runner, leave the content to them). A script that
-   runs all 20, reports (a) retrieval hit-rate: did the gold page appear in
-   top-k, and (b) answer grades via LLM-as-judge with a strict rubric. Output
-   a simple markdown scorecard.
+4. **Evals**: `evals/questions.json` with 20 Q&A pairs from the actual
+   reports. A script that runs all 20, reports (a) retrieval hit-rate: did
+   the gold page appear in top-k, and (b) answer grades via LLM-as-judge with
+   a strict rubric. Output a simple markdown scorecard.
+   *(Amended 2026-07-19: originally the user was to hand-write all 20; the
+   user directed Claude to draft them instead. Gold answers must be verified
+   against the PDF text directly — never against the pipeline's own output —
+   and the user reviews the final set.)*
 5. Deployed on **Streamlit Community Cloud** with 2–3 reports pre-ingested.
+   *(Corpus fixed 2026-07-19: NFLX FY2025, CRM FY2026, MU FY2025 — the cap
+   is reached; adding more reports is out of scope for v1.)*
 6. **README**: what it does, architecture diagram (mermaid), how to run, eval
    results table, screenshots.
 
