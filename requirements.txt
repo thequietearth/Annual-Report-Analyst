@@ -1,1 +1,8 @@
 streamlit
+langchain-openai
+langchain-chroma
+langchain-text-splitters
+chromadb
+pypdf
+tiktoken
+python-dotenv
