@@ -13,7 +13,11 @@ import streamlit as st
 import market
 import rag
 
-st.set_page_config(page_title="AI Financial Research Assistant", page_icon="📊")
+st.set_page_config(
+    page_title="AI Financial Research Assistant",
+    page_icon="📊",
+    layout="wide",
+)
 
 # On Streamlit Community Cloud the API key comes from app Secrets; locally
 # rag.py already loaded it from .env. Bridge Secrets -> env var if needed.
@@ -22,6 +26,13 @@ if not os.environ.get("OPENAI_API_KEY"):
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
     except (KeyError, FileNotFoundError):
         pass
+
+EXAMPLE_QUESTIONS = [
+    "How much did revenue grow, and what drove it?",
+    "How much was returned to shareholders?",
+    "What are the biggest risks called out?",
+    "Compare revenue growth across the selected reports",
+]
 
 st.title("📊 AI Financial Research Assistant")
 st.caption(
@@ -41,49 +52,73 @@ if not os.environ.get("OPENAI_API_KEY"):
     )
     st.stop()
 
-selected = st.multiselect(
-    "Annual report(s) — pick one, or several to compare",
-    reports,
-    default=reports[:1],
-)
+main_col, side_col = st.columns([7, 3], gap="large")
 
-with st.sidebar:
+with main_col:
+    selected = st.multiselect(
+        "Annual report(s) — pick one, or several to compare",
+        reports,
+        default=reports[:1],
+    )
+
+    with st.form("question_form"):
+        question = st.text_input(
+            "Your question",
+            placeholder="Type your own question…",
+        )
+        example = st.pills(
+            "…or try one of these",
+            EXAMPLE_QUESTIONS,
+            selection_mode="single",
+        )
+        submitted = st.form_submit_button("Ask", type="primary")
+
+    asked = (question.strip() or example or "").strip()
+
+    if submitted and asked and not selected:
+        st.warning("Pick at least one report.")
+    elif submitted and asked:
+        with st.spinner("Retrieving and answering..."):
+            if len(selected) == 1:
+                result = rag.answer(selected[0], asked)
+            else:
+                result = rag.answer_multi(selected, asked)
+
+        with st.container(border=True):
+            st.markdown(f"**{asked}**")
+            st.markdown(result["answer"])
+
+        st.subheader("Sources")
+        st.caption(
+            "Retrieved excerpts the answer is based on. Page numbers are "
+            "physical PDF pages."
+        )
+        for doc in result["chunks"]:
+            source = doc.metadata["source"].removesuffix(".pdf")
+            with st.expander(f"p. {doc.metadata['page']} · {source}"):
+                st.text(doc.page_content)
+    elif submitted:
+        st.warning("Type a question or pick an example first.")
+
+with side_col:
     st.subheader("Market snapshot")
     st.caption("Live data via Yahoo Finance — independent of the reports.")
     quotes = market.quotes([market.ticker_for(r) for r in selected])
     if not quotes:
         st.caption("No market data available.")
     for q in quotes:
-        delta = f"{q['change_pct']:+.1f}% today" if q["change_pct"] is not None else None
-        st.metric(q["ticker"], f"${q['price']:,.2f}", delta)
-        if q["low_52w"] and q["high_52w"]:
-            st.caption(f"52-week range: ${q['low_52w']:,.2f} – ${q['high_52w']:,.2f}")
+        with st.container(border=True):
+            delta = (
+                f"{q['change_pct']:+.1f}% today"
+                if q["change_pct"] is not None
+                else None
+            )
+            st.metric(q["ticker"], f"${q['price']:,.2f}", delta)
+            if q["low_52w"] and q["high_52w"]:
+                st.caption(
+                    f"52-week range: ${q['low_52w']:,.2f} – ${q['high_52w']:,.2f}"
+                )
 
-with st.form("question_form"):
-    question = st.text_input(
-        "Your question",
-        placeholder="e.g. How much did revenue grow, and what drove it?",
-    )
-    submitted = st.form_submit_button("Ask")
-
-if submitted and question.strip() and not selected:
-    st.warning("Pick at least one report.")
-elif submitted and question.strip():
-    with st.spinner("Retrieving and answering..."):
-        if len(selected) == 1:
-            result = rag.answer(selected[0], question.strip())
-        else:
-            result = rag.answer_multi(selected, question.strip())
-
-    st.markdown(result["answer"])
-
-    st.subheader("Sources")
-    st.caption(
-        "Retrieved excerpts the answer is based on. Page numbers are "
-        "physical PDF pages."
-    )
-    for doc in result["chunks"]:
-        with st.expander(f"Page {doc.metadata['page']} — {doc.metadata['source']}"):
-            st.text(doc.page_content)
-elif submitted:
-    st.warning("Type a question first.")
+    st.subheader("In the library")
+    for name in reports:
+        st.caption(f"📄 {name.replace('_', ' ')}")
