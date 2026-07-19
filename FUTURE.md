@@ -44,10 +44,23 @@ attacking in v2 (not tuned in v1 — the contract ships the honest baseline):
   This is the designed failure mode: better a visible decline than a
   hallucination.
 
+## Started in v2 (branch `v2-features`, 2026-07-19)
+
+- **Multi-document comparison** — `rag.answer_multi()`: per-report retrieval
+  (k=3 each) so every company is represented; citations become
+  `[REPORT p. N]`; UI multiselect; CLI accepts comma-separated reports.
+  Known gap: reports don't carry fiscal-year-end metadata, so the model can
+  assume wrong year-ends when excerpts omit them (seen with Micron's August
+  FYE). Fix candidate: store fiscal_year_end in collection metadata at ingest.
+- **Live market data (minimal)** — `market.py`: yfinance (keyless) sidebar
+  snapshot (last price, day change, 52-week range) for selected reports'
+  tickers, 5-min cache, degrades silently offline. Deeper integration (SGX,
+  historical charts, linking market data into answers) still open.
+
 ## Out of scope for v1 (per contract)
 
-- Multi-document comparison queries
-- Live market data / SGX / stock price integration
+- ~~Multi-document comparison queries~~ → v2 branch
+- ~~Live market data / stock price integration~~ → v2 branch (minimal)
 - Chat history or memory
 - User uploads in the UI
 - Fine-tuning, rerankers, hybrid search

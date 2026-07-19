@@ -6,3 +6,4 @@ chromadb==1.5.9
 pypdf==6.14.2
 tiktoken==0.13.0
 python-dotenv==1.2.2
+yfinance==0.2.66

@@ -40,6 +40,20 @@ Report excerpts:
 
 Question: {question}"""
 
+MULTI_SYSTEM_PROMPT = """\
+You are a financial research assistant comparing multiple companies' annual
+reports. Follow these rules strictly:
+
+- Use ONLY the report excerpts provided. Do not use outside knowledge.
+- Cite the report and page for every factual claim, inline, like
+  [NFLX_AR2025 p. 12].
+- Quote figures exactly as stated in each report (units, currency, fiscal
+  year). The companies may have DIFFERENT fiscal year ends — say so when it
+  affects comparability.
+- If an excerpt set does not contain a company's side of the answer, say
+  exactly that for that company — never guess.
+- Structure comparisons clearly: answer first, then per-company support."""
+
 
 def require_api_key() -> None:
     if not os.environ.get("OPENAI_API_KEY"):
@@ -83,6 +97,32 @@ def answer(report: str, question: str, k: int = DEFAULT_K) -> dict:
     )
     prompt = ChatPromptTemplate.from_messages(
         [("system", SYSTEM_PROMPT), ("human", USER_PROMPT)]
+    )
+    llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
+    message = (prompt | llm).invoke({"context": context, "question": question})
+    return {"answer": message.content, "chunks": chunks}
+
+
+def answer_multi(reports: list[str], question: str, k_per_report: int = 3) -> dict:
+    """Compare across several reports: retrieve per report, answer with
+    report+page citations.
+
+    k_per_report is lower than single-report k so a 3-report comparison stays
+    at <=9 chunks of context. Each report gets its own retrieval pass, which
+    guarantees every company is represented even if one dominates the
+    similarity scores.
+    """
+    require_api_key()
+    chunks = []
+    for report in reports:
+        chunks.extend(retrieve(report, question, k_per_report))
+    context = "\n\n".join(
+        f"[{doc.metadata['source'].removesuffix('.pdf')} p. {doc.metadata['page']}]\n"
+        f"{doc.page_content}"
+        for doc in chunks
+    )
+    prompt = ChatPromptTemplate.from_messages(
+        [("system", MULTI_SYSTEM_PROMPT), ("human", USER_PROMPT)]
     )
     llm = ChatOpenAI(model=CHAT_MODEL, temperature=0)
     message = (prompt | llm).invoke({"context": context, "question": question})

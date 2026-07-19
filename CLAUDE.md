@@ -35,6 +35,12 @@ Streamlit, OpenAI API for embeddings + generation (key via `.env`, never
 committed). Keep dependencies minimal — **no** agent frameworks, **no**
 LlamaIndex, **no** docker, **no** vector DB services.
 
+## Project status
+
+v1 (all six milestones) is COMPLETE and deployed as of 2026-07-19. v2 work
+happens on branch `v2-features` (first two items below are built there);
+`main` stays the stable deployed v1 until the user merges.
+
 ## Explicitly OUT of scope for v1 (refuse if asked; remind the user it's v2)
 
 - Multi-document comparison queries

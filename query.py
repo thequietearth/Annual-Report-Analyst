@@ -1,9 +1,10 @@
-"""Ask a question about an ingested annual report, from the terminal.
+"""Ask a question about ingested annual reports, from the terminal.
 
 Usage:
     python query.py --list
     python query.py NFLX_AR2025 "How many paid memberships does Netflix have?"
     python query.py CRM_AR2026 "What was total revenue?" --k 8
+    python query.py NFLX_AR2025,CRM_AR2026 "Compare revenue growth"
 """
 
 import argparse
@@ -29,16 +30,23 @@ def main() -> None:
             print('\nUsage: python query.py <report> "<question>"')
         return
 
-    if args.report not in rag.list_reports():
-        sys.exit(f"Unknown report '{args.report}'. Run: python query.py --list")
+    selected = [r.strip() for r in args.report.split(",") if r.strip()]
+    known = rag.list_reports()
+    for report in selected:
+        if report not in known:
+            sys.exit(f"Unknown report '{report}'. Run: python query.py --list")
 
-    result = rag.answer(args.report, args.question, k=args.k)
+    if len(selected) == 1:
+        result = rag.answer(selected[0], args.question, k=args.k)
+    else:
+        result = rag.answer_multi(selected, args.question)
 
     print(result["answer"])
     print("\nSources (retrieved chunks):")
     for doc in result["chunks"]:
-        snippet = " ".join(doc.page_content.split())[:100]
-        print(f"  p. {doc.metadata['page']:>4}  {snippet}")
+        snippet = " ".join(doc.page_content.split())[:90]
+        source = doc.metadata["source"].removesuffix(".pdf")
+        print(f"  {source} p. {doc.metadata['page']:>4}  {snippet}")
 
 
 if __name__ == "__main__":
