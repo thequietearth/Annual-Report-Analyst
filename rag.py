@@ -6,6 +6,8 @@ never drift apart.
 """
 
 import os
+import re
+from functools import lru_cache
 from pathlib import Path
 
 import chromadb
@@ -14,6 +16,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from rank_bm25 import BM25Okapi
 
 PROJECT_DIR = Path(__file__).parent
 CHROMA_DIR = str(PROJECT_DIR / "chroma_db")
@@ -30,6 +33,9 @@ annual report. Follow these rules strictly:
 - Use ONLY the report excerpts provided. Do not use outside knowledge.
 - Cite the page for every factual claim, inline, like [p. 12].
 - Quote figures exactly as stated in the report (units, currency, fiscal year).
+- If the excerpts include a prior-year or prior-period figure for the same
+  metric, state it alongside the current figure for comparison, even if the
+  question doesn't explicitly ask for it.
 - If the excerpts do not contain the answer, say exactly that — never guess.
 - Be concise: a direct answer first, brief supporting detail after."""
 
@@ -50,6 +56,9 @@ reports. Follow these rules strictly:
 - Quote figures exactly as stated in each report (units, currency, fiscal
   year). The companies may have DIFFERENT fiscal year ends — say so when it
   affects comparability.
+- If the excerpts include a prior-year or prior-period figure for the same
+  metric, state it alongside the current figure for comparison, even if the
+  question doesn't explicitly ask for it.
 - If an excerpt set does not contain a company's side of the answer, say
   exactly that for that company — never guess.
 - Structure comparisons clearly: answer first, then per-company support."""
@@ -79,9 +88,53 @@ def get_store(report: str) -> Chroma:
     )
 
 
+def _tokenize(text: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+@lru_cache(maxsize=None)
+def _bm25_index(report: str) -> tuple[BM25Okapi, tuple[Document, ...]]:
+    """Build a keyword index over every chunk in a report, once per process.
+
+    chroma_db/ is read-only at query time (ingestion is a separate CLI step),
+    so caching for the life of the process is safe - the eval run (milestone
+    5) showed dense embeddings under-rank questions whose answer sits in a
+    dense numeric table (e.g. "how much did Netflix repurchase in 2025?"
+    retrieved narrative pages, missing the cash-flow statement). BM25 catches
+    those because it matches on the exact terms in the question.
+    """
+    data = get_store(report).get(include=["documents", "metadatas"])
+    docs = tuple(
+        Document(page_content=text, metadata=meta)
+        for text, meta in zip(data["documents"], data["metadatas"])
+    )
+    corpus = [_tokenize(d.page_content) for d in docs]
+    return BM25Okapi(corpus), docs
+
+
 def retrieve(report: str, question: str, k: int = DEFAULT_K) -> list[Document]:
-    """Top-k most similar chunks for the question."""
-    return get_store(report).similarity_search(question, k=k)
+    """Hybrid retrieval: dense top-k unioned with BM25 keyword top-(k//2).
+
+    Dense embeddings and keyword search fail on different questions, so the
+    union recovers hits either one would miss alone, at the cost of a bit
+    more context per answer.
+    """
+    dense = get_store(report).similarity_search(question, k=k)
+
+    bm25, docs = _bm25_index(report)
+    scores = bm25.get_scores(_tokenize(question))
+    bm25_k = max(1, k // 2)
+    ranked = sorted(range(len(docs)), key=lambda i: scores[i], reverse=True)
+    keyword_hits = [docs[i] for i in ranked[:bm25_k] if scores[i] > 0]
+
+    seen = set()
+    merged = []
+    for doc in dense + keyword_hits:
+        key = (doc.metadata.get("source"), doc.metadata.get("page"), doc.page_content)
+        if key not in seen:
+            seen.add(key)
+            merged.append(doc)
+    return merged
 
 
 def answer(report: str, question: str, k: int = DEFAULT_K) -> dict:

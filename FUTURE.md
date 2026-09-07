@@ -44,6 +44,54 @@ attacking in v2 (not tuned in v1 — the contract ships the honest baseline):
   This is the designed failure mode: better a visible decline than a
   hallucination.
 
+## Eval-driven improvement loop (branch `v3-portfolio`, 2026-09-07)
+
+Applied the two cheapest levers named in the baseline findings above — hybrid
+retrieval and a YoY prompt instruction — then re-ran the identical 20
+questions. Reporting the real before/after, including where it didn't help:
+
+| | Baseline (2026-07-19) | After hybrid + YoY (2026-09-07) |
+|---|---|---|
+| Retrieval hit-rate @ 5 | 14/20 (70%) | 15/20 (75%) |
+| CORRECT | 8 | 9 |
+| PARTIAL | 9 | 7 |
+| INCORRECT | 3 | 4 |
+
+**What actually moved, question by question** (`rag.py`, `_bm25_index` /
+`retrieve`, and the YoY line in both system prompts):
+
+- **The YoY prompt line worked as intended**, cleanly: two PARTIALs
+  (Netflix net income, Micron net income) became CORRECT once the model was
+  told to volunteer the prior-year figure. Free win, no retrieval change
+  needed — this is a fix worth having by default.
+- **BM25 recovered one retrieval miss** (Micron customer/end-market
+  concentration, previously a false "not disclosed"), but the answer was
+  still graded INCORRECT for an unrelated reading-comprehension slip
+  (misattributed a 3-year figure to one year). Retrieval and generation are
+  separate problems — fixing one doesn't guarantee the other.
+- **Four retrieval misses were unmoved** (Netflix buybacks, Salesforce RPO,
+  Micron DRAM revenue, Micron capex): BM25 term-matches on a word like "DRAM"
+  or "capital expenditures" that appears on dozens of pages throughout a
+  10-K, so it doesn't reliably surface the *one* page with the actual table.
+  Keyword search alone isn't precise enough for financial-statement lookups;
+  the next lever is table-aware chunking or a reranker over a wider
+  candidate set, not more keyword matching.
+- **One case got worse in a way worth naming**: the Informatica revenue
+  question regressed from CORRECT to INCORRECT. The report legitimately
+  contains two different Informatica revenue figures (total revenue
+  contribution vs. subscription-only revenue), both already retrievable
+  before this change; the added BM25 chunk didn't introduce the ambiguity but
+  plausibly diluted the context enough to tip which figure the model
+  foregrounded. **Lesson: unioning more context is not free** — bigger
+  context windows can dilute attention even when nothing relevant was
+  removed. Next lever: rerank the merged candidate set instead of
+  concatenating dense ∪ keyword unfiltered.
+
+Net effect: a modest, real improvement (+1 hit, +1 correct), not a clean win.
+Both remaining levers (rerank instead of union; table-aware chunking) are
+named, not built — consistent with shipping the honest number and scoping the
+next cheapest experiment rather than tuning until the demo looks good.
+
 ## Started in v2 (branch `v2-features`, 2026-07-19)
 
 - **Multi-document comparison** — `rag.answer_multi()`: per-report retrieval

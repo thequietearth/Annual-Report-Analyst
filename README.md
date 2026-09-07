@@ -23,8 +23,8 @@ flowchart LR
         D --> E[("ChromaDB<br/>one collection per report<br/>metadata: source, page")]
     end
     subgraph Query["Query — Streamlit UI / terminal CLI"]
-        Q["User question"] --> R["Embed question"]
-        R --> S["Top-5 similarity search"]
+        Q["User question"] --> R["Dense: embed + top-5<br/>Keyword: BM25 top-2"]
+        R --> S["Union, deduped"]
         E --> S
         S --> T["gpt-4.1-mini, temp 0<br/>strict grounding prompt"]
         T --> U["Answer with inline [p. N] cites<br/>+ retrieved source excerpts"]
@@ -51,19 +51,23 @@ retrieved chunks (hit-rate), and an LLM judge (`gpt-4.1`) grading the answer
 against the gold answer under a strict rubric. Full details:
 [evals/scorecard.md](evals/scorecard.md).
 
-| Metric | Baseline (v1) |
-|---|---|
-| Retrieval hit-rate @ 5 | **14/20 (70%)** |
-| Answers graded CORRECT | 8/20 |
-| Answers graded PARTIAL | 9/20 |
-| Answers graded INCORRECT | 3/20 |
+| Metric | Baseline (v1) | After hybrid retrieval + YoY prompt fix |
+|---|---|---|
+| Retrieval hit-rate @ 5 | 14/20 (70%) | **15/20 (75%)** |
+| Answers graded CORRECT | 8/20 | **9/20** |
+| Answers graded PARTIAL | 9/20 | 7/20 |
+| Answers graded INCORRECT | 3/20 | 4/20 |
 
-The honest baseline, unfiltered. Failure patterns (analyzed in
-[FUTURE.md](FUTURE.md)): retrieval misses cluster on questions whose answers
-live in dense financial-statement tables; most PARTIALs are answers that gave
-the right figure without the year-over-year context the gold answer demands;
-and when retrieval fails outright, the grounding prompt makes the model
-decline visibly rather than hallucinate.
+This is a real improvement loop, not a demo number: baseline → diagnose
+failure patterns → apply the two cheapest levers (BM25 keyword search unioned
+with dense retrieval; a prompt line requiring year-over-year context when
+available) → re-run the identical 20 questions and publish what actually
+moved. It's a modest, mixed result, on purpose reported as such — two clean
+wins from the prompt fix, one retrieval miss recovered by keyword search, and
+one case where the added context measurably diluted an otherwise-correct
+answer. The full question-by-question breakdown, including *why* four misses
+didn't move and what that implies about the next lever (reranking over table
+matching), is in [FUTURE.md](FUTURE.md#eval-driven-improvement-loop-branch-v3-portfolio-2026-09-07).
 
 ## Run it locally
 
