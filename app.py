@@ -11,6 +11,7 @@ import os
 import streamlit as st
 
 import agent
+import brief
 import market
 import rag
 
@@ -27,6 +28,15 @@ if not os.environ.get("OPENAI_API_KEY"):
         os.environ["OPENAI_API_KEY"] = st.secrets["OPENAI_API_KEY"]
     except (KeyError, FileNotFoundError):
         pass
+
+def safe_markdown(text: str) -> None:
+    """st.markdown() renders $...$ as LaTeX math by default, which garbles
+    any answer with two or more literal dollar amounts (routine in
+    financial text - a bug caught by screenshotting the executive brief,
+    where "$41.5 billion...$37.9 billion" rendered as a single mangled
+    equation). Escaping every literal $ keeps dollar signs as plain text."""
+    st.markdown(text.replace("$", "\\$"))
+
 
 EXAMPLE_QUESTIONS = [
     "How much did revenue grow, and what drove it?",
@@ -87,8 +97,8 @@ with main_col:
             result = agent.deep_answer(asked)
 
         with st.container(border=True):
-            st.markdown(f"**{asked}**")
-            st.markdown(result["answer"])
+            safe_markdown(f"**{asked}**")
+            safe_markdown(result["answer"])
 
         st.subheader(f"Agent trace — {len(result['trace'])} tool call(s)")
         st.caption("What the agent looked up, in order, to reach this answer.")
@@ -103,8 +113,8 @@ with main_col:
                 result = rag.answer_multi(selected, asked)
 
         with st.container(border=True):
-            st.markdown(f"**{asked}**")
-            st.markdown(result["answer"])
+            safe_markdown(f"**{asked}**")
+            safe_markdown(result["answer"])
 
         st.subheader("Sources")
         st.caption(
@@ -140,3 +150,33 @@ with side_col:
     st.subheader("In the library")
     for name in reports:
         st.caption(f"📄 {name.replace('_', ' ')}")
+
+st.divider()
+st.subheader("📋 Executive brief")
+st.caption(
+    "One-click summary across revenue, profitability, cash, risks, "
+    "strategy, and notable events — the artifact you'd hand a VP after a "
+    "discovery call, not a chat transcript."
+)
+brief_report = st.selectbox("Report to summarize", reports, key="brief_report")
+if st.button("Generate executive brief"):
+    progress_bar = st.progress(0.0)
+
+    def show_progress(step: int, total: int, label: str) -> None:
+        progress_bar.progress(step / total, text=f"{label}…")
+
+    brief_text = brief.generate(brief_report, on_progress=show_progress)
+    progress_bar.empty()
+
+    with st.container(border=True):
+        safe_markdown(brief_text)
+    st.caption(
+        "Verify any figure you plan to act on against the source PDF — page "
+        "citations can occasionally point to a nearby page (see FUTURE.md)."
+    )
+    st.download_button(
+        "Download brief (Markdown)",
+        brief_text,
+        file_name=f"{brief_report}_executive_brief.md",
+        mime="text/markdown",
+    )

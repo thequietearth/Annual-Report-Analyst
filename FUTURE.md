@@ -126,6 +126,57 @@ Two findings from testing it against the real tools, both fixed:
   synthesis doesn't need this), so cost only goes up on the opt-in deep
   path - and it stayed low cents per call.
 
+## App-wide bug: dollar amounts rendered as garbled LaTeX (found + fixed 2026-09-07)
+
+Caught by screenshotting the executive brief for the README: `st.markdown()`
+renders `$...$` as inline LaTeX math by default, and any answer with two or
+more literal dollar amounts (routine in financial text - "$41.5 billion...
+$37.9 billion") got its first and second `$` paired as math delimiters,
+mangling everything between them into one garbled expression. This affected
+every `st.markdown(answer)` call in the app, including the single-shot and
+multi-report paths from v1/v2 - just not obviously in earlier screenshots,
+which happened to show answers with only one dollar figure each. Fixed with
+a `safe_markdown()` helper that escapes literal `$` before rendering,
+applied everywhere an LLM answer or a brief reaches the screen; the raw
+(unescaped) text still goes to `st.download_button` so the downloaded
+Markdown file isn't full of backslashes.
+
+## Executive brief generator (branch `v3-portfolio`, 2026-09-07)
+
+`brief.py`: runs a fixed six-question battery through `rag.answer()`
+(revenue & growth, profitability, cash & capital returns, key risks,
+strategic priorities, notable events) for one report, then a synthesis call
+(also `gpt-4.1-mini`) compiles the six already-cited answers into a one-page
+brief - headline metrics first, one paragraph per section, citations
+preserved verbatim. Downloadable as Markdown from the UI.
+
+**A citation-precision bug, found by checking the brief against the PDF
+before shipping it, that predates the brief.** Cross-checking the brief's
+"notable events" section - a Warner Bros. Discovery merger and a bridge
+loan facility increase from $34B to $42.2B - against the source PDF: the
+merger fact and the dollar figures are both real and accurate, but the
+figure was cited as `[p. 79]`, and physical page 79 is the income tax rate
+reconciliation table, entirely unrelated. I traced this back to `rag.answer()`
+itself, called directly with no brief.py in the path: it retrieves page 83
+(which genuinely contains the $34B->$42.2B language, confirmed by direct
+text search) among its top-k chunks, but cites `[p. 79]` for that claim
+instead. `brief.py`'s synthesis step faithfully preserved the citation it
+was given - the error is upstream, in how the base grounding prompt maps a
+claim to a specific page when several retrieved pages discuss the same
+general topic (WBD financing spans pages 20, 34, 35, 66, 79's neighbors, 83,
+and 86 of this filing). Not caught by the 20-question eval suite, because no
+eval question happened to probe a page with this many topically-overlapping
+neighbors.
+
+This is a real limitation of the whole citation approach, not a brief.py bug,
+and it's more consequential than any single eval score: a wrong page number
+undermines the product's core promise (page-cited, so you can verify
+anything). Documenting instead of quietly shipping around it. Next lever:
+constrain the model to cite only from a chunk-to-page index built from the
+retrieved set (i.e. validate every emitted `[p. N]` against the actual pages
+present in context, reject/retry citations that don't match), rather than
+trusting the model to attribute correctly among several visible pages.
+
 ## Started in v2 (branch `v2-features`, 2026-07-19)
 
 - **Multi-document comparison** — `rag.answer_multi()`: per-report retrieval
