@@ -10,6 +10,7 @@ import os
 
 import streamlit as st
 
+import agent
 import market
 import rag
 
@@ -71,12 +72,29 @@ with main_col:
             EXAMPLE_QUESTIONS,
             selection_mode="single",
         )
+        deep = st.checkbox(
+            "🔎 Deep analysis — let an agent decide its own searches across "
+            "reports and live quotes, instead of a single retrieval pass",
+        )
         submitted = st.form_submit_button("Ask", type="primary")
 
     asked = (question.strip() or example or "").strip()
 
-    if submitted and asked and not selected:
+    if submitted and asked and not selected and not deep:
         st.warning("Pick at least one report.")
+    elif submitted and asked and deep:
+        with st.spinner("Agent is deciding what to look up..."):
+            result = agent.deep_answer(asked)
+
+        with st.container(border=True):
+            st.markdown(f"**{asked}**")
+            st.markdown(result["answer"])
+
+        st.subheader(f"Agent trace — {len(result['trace'])} tool call(s)")
+        st.caption("What the agent looked up, in order, to reach this answer.")
+        for i, t in enumerate(result["trace"], 1):
+            with st.expander(f"{i}. {t['tool']}({t['args']})"):
+                st.text(t["result"])
     elif submitted and asked:
         with st.spinner("Retrieving and answering..."):
             if len(selected) == 1:

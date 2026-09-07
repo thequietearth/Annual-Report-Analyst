@@ -5,6 +5,7 @@ Usage:
     python query.py NFLX_AR2025 "How many paid memberships does Netflix have?"
     python query.py CRM_AR2026 "What was total revenue?" --k 8
     python query.py NFLX_AR2025,CRM_AR2026 "Compare revenue growth"
+    python query.py --deep "Is Micron's capex sustainable vs its cash flow, and how is the market pricing it?"
 """
 
 import argparse
@@ -20,7 +21,22 @@ def main() -> None:
     parser.add_argument("--k", type=int, default=rag.DEFAULT_K,
                         help=f"Number of chunks to retrieve (default {rag.DEFAULT_K})")
     parser.add_argument("--list", action="store_true", help="List ingested reports")
+    parser.add_argument("--deep", action="store_true",
+                        help="Deep-analysis agent: decides its own searches across "
+                             "reports and live quotes. Pass just the question, no report.")
     args = parser.parse_args()
+
+    if args.deep:
+        question = args.report  # single positional in --deep mode
+        if not question:
+            sys.exit('Usage: python query.py --deep "<question>"')
+        import agent
+        result = agent.deep_answer(question)
+        print(result["answer"])
+        print("\nTool calls:")
+        for t in result["trace"]:
+            print(f"  {t['tool']}({t['args']})")
+        return
 
     if args.list or not (args.report and args.question):
         print("Ingested reports:")

@@ -92,6 +92,40 @@ Both remaining levers (rerank instead of union; table-aware chunking) are
 named, not built — consistent with shipping the honest number and scoping the
 next cheapest experiment rather than tuning until the demo looks good.
 
+## Deep-analysis agent (branch `v3-portfolio`, 2026-09-07)
+
+`agent.py`: a plain function-calling loop (`ChatOpenAI.bind_tools` + a manual
+loop, no LangGraph/AgentExecutor) with three tools - `search_report`,
+`get_quote` (live market data via `market.py`), `list_available_reports` -
+capped at 6 tool calls. For questions a single retrieval pass can't answer
+well (cross-report comparisons entangled with live market context).
+
+Two findings from testing it against the real tools, both fixed:
+
+- **A real bug, not just an agent quirk**: an early test had the agent guess
+  a plausible-but-wrong report name (`CRM_AR2023` instead of `CRM_AR2026`).
+  `rag.get_store()` passed that name straight to LangChain's `Chroma`
+  wrapper, which **silently auto-creates an empty collection for any name
+  it's given** - so the typo permanently persisted a junk empty collection
+  to `chroma_db/` (caught only because the *next* search against it raised
+  "division by zero" from similarity search over zero documents). Fixed at
+  the source: `get_store()` now checks the name against
+  `list_collections()` first and raises a clear `ValueError` - this
+  protects every caller (CLI, UI, agent), not just the new one. The agent's
+  `search_report` tool also validates independently and returns the exact
+  valid-report list in its error string, so a wrong guess is a one-step
+  self-correction instead of a permanent side effect.
+- **Model choice matters more for agentic orchestration than for one-shot
+  answering**: with `gpt-4.1-mini` (the model used everywhere else in this
+  app), the agent responded to that same wrong-name error by retrying the
+  *same* wrong name with a *rephrased query*, twice, before eventually
+  falling back to listing reports - burning 4 of 6 tool calls on a mistake
+  the error message already corrected. Swapping only the agent's model to
+  `gpt-4.1` fixed it: one wrong guess, immediate correction, done in 3-4
+  calls. `rag.answer()` stays on `gpt-4.1-mini` (single-shot retrieval
+  synthesis doesn't need this), so cost only goes up on the opt-in deep
+  path - and it stayed low cents per call.
+
 ## Started in v2 (branch `v2-features`, 2026-07-19)
 
 - **Multi-document comparison** — `rag.answer_multi()`: per-report retrieval

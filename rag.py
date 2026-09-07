@@ -81,8 +81,20 @@ def list_reports() -> list[str]:
 
 
 def get_store(report: str) -> Chroma:
+    """Open an existing report's collection.
+
+    Checks existence first: the underlying Chroma wrapper otherwise
+    auto-creates an empty collection for any name it's given, which would
+    silently persist a junk collection to chroma_db/ for a mistyped report
+    name (found via the agent's search_report tool guessing a wrong report
+    name during testing - see FUTURE.md).
+    """
+    client = _client()
+    known = {c.name for c in client.list_collections()}
+    if report not in known:
+        raise ValueError(f"Unknown report '{report}'. Ingested reports: {sorted(known)}")
     return Chroma(
-        client=_client(),
+        client=client,
         collection_name=report,
         embedding_function=OpenAIEmbeddings(model=EMBEDDING_MODEL),
     )
