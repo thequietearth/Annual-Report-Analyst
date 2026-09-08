@@ -1,11 +1,12 @@
 # 📊 AI Financial Research Assistant
 
-Ask questions about company annual reports in natural language and get
-answers **with page-level citations**. Retrieval-augmented generation (RAG)
-over SEC-filed annual reports: PDF → per-page chunks → OpenAI embeddings →
-ChromaDB → hybrid retrieval → grounded LLM answer. Beyond single-shot
-retrieval, it also has a tool-using **agent** for multi-step questions and a
-one-click **executive brief** generator.
+A RAG tool for querying company annual reports in natural language. This
+project had been scoped before and never shipped — this time the priority
+was actually finishing it, so I treated the original scope as a hard
+contract (see [CLAUDE.md](CLAUDE.md)) and built it in vertical slices:
+ingestion, retrieval, a UI, an eval harness, then polish. Once that v1 was
+done and deployed, I kept going — hybrid retrieval, a tool-using agent, and
+an executive brief generator, described below.
 
 **Live demo:** <https://ai-financial-research-assistant-ray.streamlit.app>
 (pre-ingested: Netflix FY2025, Salesforce FY2026, Micron FY2025)
@@ -18,7 +19,12 @@ one-click **executive brief** generator.
 |---|---|
 | ![Agent](docs/screenshot_agent.png) | ![Brief](docs/screenshot_brief.png) |
 
-## Architecture
+## How it works
+
+PDF annual report → extract text per page → chunk (~800 tokens, 150
+overlap) → embed with OpenAI → store in ChromaDB with page metadata. At
+query time it retrieves relevant chunks and asks an LLM to answer using
+only what it retrieved, with a page citation on every claim.
 
 ```mermaid
 flowchart LR
@@ -37,54 +43,58 @@ flowchart LR
     end
 ```
 
-Design choices worth noting:
+A few decisions worth explaining:
 
-- **Chunks never span PDF pages**, so every chunk carries an exact page
-  number — citations are the product's core promise.
-- **The prompt forbids outside knowledge** and requires an inline `[p. N]`
-  cite per claim; when retrieval comes up empty the model says "not in the
-  report" instead of guessing.
-- **The ChromaDB directory is committed to git** — that's how pre-ingested
-  reports ship to Streamlit Community Cloud with no vector-DB service.
-- Cited page numbers are **physical PDF pages** (the Nth page of the file),
-  which may differ from the page number printed in the footer.
-- **Retrieval is hybrid**: dense embedding search unioned with BM25 keyword
-  search, because they miss on different question shapes (measured in the
-  eval loop below).
+- Chunks never span PDF pages. That costs a little recall when an answer
+  straddles a page break, but it means every chunk has one unambiguous page
+  number, which is the whole point of the citations.
+- The prompt is written to refuse outside knowledge and cite every claim.
+  If the retrieved excerpts don't answer the question, it says so instead
+  of guessing — I'd rather it admit it doesn't know than make something up
+  about a company's financials.
+- ChromaDB's data directory is committed to git. That's how the
+  pre-ingested reports get to Streamlit Community Cloud without standing up
+  a separate vector database service.
+- Cited pages are physical PDF page numbers (the Nth page of the file),
+  which sometimes differ from the page number printed in the document's own
+  footer.
+- Retrieval is hybrid: dense embedding search unioned with BM25 keyword
+  search. I added the keyword side after the eval run below showed dense
+  search alone missing questions whose answers live in dense financial
+  tables rather than narrative text.
 
-### Beyond single-shot retrieval: agent and executive brief
+### Agent and executive brief
 
-Two features sit on top of the same `rag.py` core, for questions a single
-retrieval pass doesn't answer well:
+Two more things sit on top of the same `rag.py` core, for cases a single
+retrieval pass doesn't handle well:
 
 - **Deep-analysis agent** (`agent.py`) — a plain function-calling loop
-  (`ChatOpenAI.bind_tools()` plus a ~30-line manual loop; no LangGraph, no
+  (`ChatOpenAI.bind_tools()` plus a ~30-line loop, no LangGraph or
   AgentExecutor) with three tools: search a report, get a live stock quote,
-  list available reports. Capped at 6 tool calls. For a question like *"Is
-  Micron's capex sustainable relative to its operating cash flow, and how is
-  the market pricing the stock?"*, it decides on its own which reports to
-  search and when to check a live quote, then synthesizes a cited answer.
-  The UI renders the full tool-call trace so you can watch what it decided
-  to look up, in order.
+  list available reports, capped at 6 calls. Ask it something like *"Is
+  Micron's capex sustainable relative to its operating cash flow, and how
+  is the market pricing the stock?"* and it decides on its own which
+  reports to search and when to pull a live quote, then writes a cited
+  answer. The UI shows the full tool-call trace, so you can see what it
+  looked up and in what order.
 - **Executive brief generator** (`brief.py`) — runs a fixed six-question
-  battery through the standard grounded pipeline (revenue & growth,
-  profitability, cash & capital returns, key risks, strategic priorities,
-  notable events), then one synthesis call compiles the already-cited
-  answers into a one-page brief with headline metrics up top — the artifact
-  you'd hand a VP after a discovery call, not a chat transcript. Downloadable
-  as Markdown.
+  battery (revenue & growth, profitability, cash & capital returns, key
+  risks, strategic priorities, notable events) through the normal grounded
+  pipeline, then one more call compiles the already-cited answers into a
+  one-page brief. Downloadable as Markdown.
 
-Building and testing both surfaced two real bugs in the underlying system,
-not just in the new code — a silent-collection-creation footgun in
-`rag.get_store()` and an app-wide dollar-sign rendering bug — both root-caused
-and fixed; details in [FUTURE.md](FUTURE.md).
+Building both of these surfaced two real bugs in the existing code, not
+just in the new stuff — a silent-collection-creation footgun in
+`rag.get_store()` and an app-wide bug where dollar amounts got rendered as
+garbled LaTeX. Both are written up in [FUTURE.md](FUTURE.md).
 
 ## Eval results
 
-20 Q&A pairs across the three reports, gold figures string-verified against
-the PDF text. Two metrics per question: did a gold page reach the top-5
-retrieved chunks (hit-rate), and an LLM judge (`gpt-4.1`) grading the answer
-against the gold answer under a strict rubric. Full details:
+20 Q&A pairs across the three reports, gold answers checked against the
+PDF text directly (not against the pipeline's own output). Two things get
+measured per question: whether a gold page showed up in the top-5 retrieved
+chunks, and whether an LLM judge (`gpt-4.1`) grades the answer as correct
+against a strict rubric. Full breakdown in
 [evals/scorecard.md](evals/scorecard.md).
 
 | Metric | Baseline (v1) | After hybrid retrieval + YoY prompt fix |
@@ -94,16 +104,16 @@ against the gold answer under a strict rubric. Full details:
 | Answers graded PARTIAL | 9/20 | 7/20 |
 | Answers graded INCORRECT | 3/20 | 4/20 |
 
-This is a real improvement loop, not a demo number: baseline → diagnose
-failure patterns → apply the two cheapest levers (BM25 keyword search unioned
-with dense retrieval; a prompt line requiring year-over-year context when
-available) → re-run the identical 20 questions and publish what actually
-moved. It's a modest, mixed result, on purpose reported as such — two clean
-wins from the prompt fix, one retrieval miss recovered by keyword search, and
-one case where the added context measurably diluted an otherwise-correct
-answer. The full question-by-question breakdown, including *why* four misses
-didn't move and what that implies about the next lever (reranking over table
-matching), is in [FUTURE.md](FUTURE.md#eval-driven-improvement-loop-branch-v3-portfolio-2026-09-07).
+I ran the baseline, looked at what was actually failing, picked the two
+cheapest fixes (keyword search unioned with dense retrieval, and a prompt
+line requiring year-over-year context when it's available), then re-ran
+the identical 20 questions. The result is mixed, and I left it that way
+rather than cherry-picking: two clean wins from the prompt fix, one
+retrieval miss recovered by keyword search, but also one case where the
+added context diluted an answer that was already correct. What that
+implies about the next lever (something closer to reranking or table-aware
+retrieval) is in
+[FUTURE.md](FUTURE.md#eval-driven-improvement-loop-branch-v3-portfolio-2026-09-07).
 
 ## Run it locally
 
@@ -160,15 +170,15 @@ data/reports/       Source PDFs (gitignored - only embeddings ship)
 Push to GitHub, create the app on [Streamlit Community
 Cloud](https://share.streamlit.io) (`main`, `app.py`), and set
 `OPENAI_API_KEY` in the app's **Secrets**. Anyone with the app URL runs
-queries billed to that key — set a spending cap on the OpenAI dashboard.
+queries billed to that key, so set a spending cap on the OpenAI dashboard.
 
-## Roadmap
+## What's next
 
-v2 candidates and deliberate v1 simplifications live in
-[FUTURE.md](FUTURE.md).
+v2 ideas and the simple-vs-clever calls I made along the way are tracked in
+[FUTURE.md](FUTURE.md), including three things I've deliberately parked
+rather than built — with the reasoning for why.
 
 ---
 
-*Built as a scoped v1 with a hard contract (see [CLAUDE.md](CLAUDE.md)).
-Not investment advice; answers come from the filed reports and can be wrong —
-verify against the cited pages.*
+*Not investment advice — answers come from the filed reports and can be
+wrong. Verify anything you plan to act on against the cited pages.*
